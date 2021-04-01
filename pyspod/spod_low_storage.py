@@ -94,10 +94,13 @@ class SPOD_low_storage(SPOD_base):
 
 
 				# window and Fourier transform block
+				s = time.time()
+				print('Scipy FFT [low_storage] ...')
 				Q_blk = Q_blk * self._window
 				Q_blk_hat = (self._winWeight / self._n_DFT) * fft(Q_blk, axis=0)
 				# Q_blk_hat = (winWeight / self._n_DFT) * pyfftw.interfaces.scipy_fftpack.fft(Q_blk, axis=0)
 				Q_blk_hat = Q_blk_hat[0:self._n_freq,:];
+				print('Scipy FFT [low_storage] - Elapsed: ', time.time() - s, 'sec.')
 
 				# save FFT blocks in storage memory if required
 				if self._savefft:

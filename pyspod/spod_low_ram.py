@@ -84,11 +84,14 @@ class SPOD_low_ram(SPOD_base):
 					Q_blk = Q_blk / Q_var
 
 				# window and Fourier transform block
+				s = time.time()
+				print('Scipy FFT [low RAM] ...')
 				self._window = self._window.reshape(self._window.shape[0],1)
 				Q_blk = Q_blk * self._window
 				Q_blk_hat = (self._winWeight / self._n_DFT) * np.fft.fft(Q_blk, axis=0);
 				Q_blk_hat = Q_blk_hat[0:self._n_freq,:];
-
+				print('Scipy FFT [low RAM] - Elapsed: ', time.time() - s, 'sec.')
+				
 				# correct Fourier coefficients for one-sided spectrum
 				if self._isrealx:
 					Q_blk_hat[1:-1,:] = 2 * Q_blk_hat[1:-1,:]

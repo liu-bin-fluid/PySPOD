@@ -10,16 +10,16 @@ import sys
 import psutil
 import warnings
 import numpy as np
-import scipy.special as sc
 from tqdm import tqdm
+from scipy.fft import fft
+import scipy.special as sc
+from numpy import linalg as la
 
 # Import custom Python packages
 import pyspod.postprocessing as post
 
-# Current, parent and file paths
+# Current file path
 CWD = os.getcwd()
-CF  = os.path.realpath(__file__)
-CFD = os.path.dirname(CF)
 BYTE_TO_GB = 9.3132257461548e-10
 
 
@@ -49,18 +49,23 @@ class SPOD_base(object):
 				X = X[...,np.newaxis]
 		else:
 			def data_handler(data, t_0, t_end, variables):
-				if t_0 == t_end: ti = np.arange(t_0,t_0+1)
-				else           : ti = np.arange(t_0,t_end)
-				d = data[ti,...,:]
+				if t_0 > t_end:
+					raise ValueError('`t_0` cannot be greater than `t_end`.')
+				elif t_0 >= self._nt:
+					raise ValueError('`t_0` cannot be greater or equal to time dimension.')
+				elif t_0 == t_end:
+					ti = np.arange(t_0, t_0+1)
+					d = data[[t_0],...,:]
+				else:
+					ti = np.arange(t_0, t_end)
+					d = data[ti,...,:]
 				return d
-
 			self._data_handler = data_handler
 			self._data = np.array(data)
 			X = self._data_handler(self._data, t_0=0, t_end=0, variables=self._variables)
 			if self._nv == 1 and (self._data.ndim != self._xdim + 2):
 				X = X[...,np.newaxis]
 				self._data = self._data[...,np.newaxis]
-
 
 		# get data dimensions and store in class
 		self._nx = X[0,...,0].size
@@ -274,14 +279,14 @@ class SPOD_base(object):
 		return self._n_modes
 
 	@property
-	def n_modes_saved(self):
+	def n_modes_save(self):
 		'''
 		Get the number of modes.
 
 		:return: the number of modes computed by the SPOD algorithm.
 		:rtype: int
 		'''
-		return self._n_modes_saved
+		return self._n_modes_save
 
 	@property
 	def modes(self):
@@ -324,9 +329,6 @@ class SPOD_base(object):
 				n_DFT = window
 				window = SPOD_base._hamming_window(window)
 				window_name = 'hamming'
-			elif (window.size == (2**SPOD_base._nextpow2(window.size))):
-				n_DFT = window.size
-				window_name = 'user_specified'
 			else:
 				n_DFT = window.size
 				window_name = 'user_specified'
@@ -413,6 +415,11 @@ class SPOD_base(object):
 				freq[(n_DFT+1)/2+1:] = freq[(n_DFT+1)/2+1:] - (1 / dt)
 		n_freq = len(freq)
 
+		n_modes_save = n_blocks
+		if 'n_modes_save' in self._params: n_modes_save = self._params['n_modes_save']
+		if n_modes_save > n_blocks: n_modes_save = n_blocks
+		self._n_modes_save = n_modes_save
+
 		# display parameter summary
 		print('')
 		print('SPOD parameters')
@@ -434,6 +441,90 @@ class SPOD_base(object):
 	# ---------------------------------------------------------------------------
 
 
+	# Common methods
+	# ---------------------------------------------------------------------------
+
+	def compute_blocks(self, iBlk):
+
+		# get time index for present block
+		offset = min(iBlk * (self._n_DFT - self._n_overlap) + self._n_DFT, self._nt) - self._n_DFT
+
+		# Get data
+		Q_blk = self._data_handler(
+			self._data, t_0=offset,	t_end=self._n_DFT+offset, variables=self._variables)
+		Q_blk = Q_blk.reshape(self._n_DFT, self._nx * self._nv)
+
+		# Subtract longtime or provided mean
+		Q_blk = Q_blk[:] - self._x_mean
+
+		# if block mean is to be subtracted, do it now that all data is collected
+		if self._mean_type.lower() == 'blockwise':
+			Q_blk = Q_blk - np.mean(Q_blk, axis=0)
+
+		# normalize by pointwise variance
+		if self._normvar:
+			Q_var = np.sum((Q_blk - np.mean(Q_blk,axis=0))**2, axis=0) / (self._n_DFT-1)
+			# address division-by-0 problem with NaNs
+			Q_var[Q_var < 4 * np.finfo(float).eps] = 1;
+			Q_blk = Q_blk / Q_var
+
+		# window and Fourier transform block
+		self._window = self._window.reshape(self._window.shape[0],1)
+		Q_blk = Q_blk * self._window
+		Q_blk_hat = (self._winWeight / self._n_DFT) * fft(Q_blk, axis=0);
+		Q_blk_hat = Q_blk_hat[0:self._n_freq,:];
+
+		# correct Fourier coefficients for one-sided spectrum
+		if self._isrealx:
+			Q_blk_hat[1:-1,:] = 2 * Q_blk_hat[1:-1,:]
+
+		return Q_blk_hat, offset
+
+
+
+	def compute_standard_spod(self, Q_hat_f, iFreq):
+
+		# compute inner product in frequency space, for given frequency
+		M = np.matmul(Q_hat_f.conj().T, (Q_hat_f * self._weights))  / self._n_blocks
+
+		# extract eigenvalues and eigenvectors
+		L,V = la.eig(M)
+		L = np.real_if_close(L, tol=1000000)
+
+		# reorder eigenvalues and eigenvectors
+		idx = np.argsort(L)[::-1]
+		L = L[idx]
+		V = V[:,idx]
+
+		# compute spatial modes for given frequency
+		Psi = np.matmul(Q_hat_f, np.matmul(V, np.diag(1. / np.sqrt(L) / np.sqrt(self._n_blocks))))
+
+		# save modes in storage too in case post-processing crashes
+		Psi = Psi[:,0:self._n_modes_save]
+		Psi = Psi.reshape(self._xshape+(self._nv,)+(self._n_modes_save,))
+		file_psi = os.path.join(self._save_dir_blocks,
+			'modes1to{:04d}_freq{:04d}.npy'.format(self._n_modes_save,iFreq))
+		np.save(file_psi, Psi)
+		self._modes[iFreq] = file_psi
+		self._eigs[iFreq,:] = abs(L)
+
+		# get and save confidence interval if required
+		if self._conf_interval:
+			self._eigs_c[iFreq,:,0] = self._eigs[iFreq,:] * 2 * self._n_blocks / self._xi2_lower
+			self._eigs_c[iFreq,:,1] = self._eigs[iFreq,:] * 2 * self._n_blocks / self._xi2_upper
+
+
+
+	def store_and_save(self):
+		self._eigs_c_u = self._eigs_c[:,:,0]
+		self._eigs_c_l = self._eigs_c[:,:,1]
+		file = os.path.join(self._save_dir_blocks,'spod_energy')
+		np.savez(file, eigs=self._eigs, eigs_c_u=self._eigs_c_u, eigs_c_l=self._eigs_c_l, f=self._freq)
+		self._n_modes = self._eigs.shape[-1]
+
+	# ---------------------------------------------------------------------------
+
+
 
 	# getters with arguments
 	# ---------------------------------------------------------------------------
@@ -448,11 +539,11 @@ class SPOD_base(object):
 		nearest_freq, idx = post.find_nearest_freq(freq_required=freq_required, freq=freq)
 		return nearest_freq, idx
 
-	def find_nearest_coords(self, x, coords):
+	def find_nearest_coords(self, coords, x):
 		'''
 		See method implementation in the postprocessing module.
 		'''
-		xi, idx = post.find_nearest_coords(coords=coords, x=x, data_space_dim=self.xdim)
+		xi, idx = post.find_nearest_coords(coords=coords, x=x, data_space_dim=self.xshape)
 		return xi, idx
 
 	def get_modes_at_freq(self, freq_idx):
@@ -462,7 +553,7 @@ class SPOD_base(object):
 		if self._modes is None:
 			raise ValueError('Modes not found. Consider running fit()')
 		elif isinstance(self._modes, dict):
-			gb_memory_modes = freq_idx * self.nx * self._n_modes_saved * \
+			gb_memory_modes = freq_idx * self.nx * self._n_modes_save * \
 				sys.getsizeof(complex()) * BYTE_TO_GB
 			gb_vram_avail = psutil.virtual_memory()[1] * BYTE_TO_GB
 			gb_sram_avail = psutil.swap_memory()[2] * BYTE_TO_GB
@@ -522,18 +613,18 @@ class SPOD_base(object):
 			print('... blocks are not present - proceeding to compute them.\n')
 			return False
 
-	@staticmethod
-	def _nextpow2(a):
-		'''
-			Returns the exponents for the smallest powers
-			of 2 that satisfy 2^p >= abs(a)
-		'''
-		p = 0
-		v = 0
-		while v < np.abs(a):
-			v = 2 ** p
-			p += 1
-		return p
+	# @staticmethod
+	# def _nextpow2(a):
+	# 	'''
+	# 		Returns the exponents for the smallest powers
+	# 		of 2 that satisfy 2^p >= abs(a)
+	# 	'''
+	# 	p = 0
+	# 	v = 0
+	# 	while v < np.abs(a):
+	# 		v = 2 ** p
+	# 		p += 1
+	# 	return p
 
 	@staticmethod
 	def _hamming_window(N):
@@ -864,14 +955,14 @@ class SPOD_base(object):
 		# 	train_op_shape = self.training_data_op.shape
 		# 	test_ip_shape = self.testing_data_ip.shape
 		# 	test_op_shape = self.testing_data_op.shape
-			
+
 		# 	from sklearn.preprocessing import MinMaxScaler
-			
+
 		# 	self.ip_scaler = MinMaxScaler()
 
 		# 	self.training_data_ip = self.ip_scaler.fit_transform(
 		# 					self.training_data_ip.reshape(-1,train_ip_shape[-1])).reshape(train_ip_shape)
-			
+
 		# 	self.testing_data_ip = self.ip_scaler.fit(
 		# 					self.testing_data_ip.reshape(-1,test_ip_shape[-1])).reshape(test_ip_shape)
 
@@ -879,7 +970,7 @@ class SPOD_base(object):
 
 		# 	self.training_data_op = self.op_scaler.fit_transform(
 		# 					self.training_data_op.reshape(-1,train_op_shape[-1])).reshape(train_op_shape)
-			
+
 		# 	self.testing_data_op = self.op_scaler.fit(
 		# 					self.testing_data_op.reshape(-1,test_op_shape[-1])).reshape(test_op_shape)
 
@@ -900,8 +991,8 @@ class SPOD_base(object):
 		from tensorflow.keras.models import load_model, Model
 		from tensorflow.keras.utils import plot_model
 
-		def coeff_determination(y_pred, y_true): 
-			SS_res =  K.sum(K.square( y_true-y_pred ),axis=0) 
+		def coeff_determination(y_pred, y_true):
+			SS_res =  K.sum(K.square( y_true-y_pred ),axis=0)
 			SS_tot = K.sum(K.square( y_true - K.mean(y_true,axis=0) ),axis=0 )
 			return K.mean(1 - SS_res/(SS_tot + K.epsilon()) )
 
@@ -929,7 +1020,7 @@ class SPOD_base(object):
 		return None
 
 	def fit_emulator(self,batch_size,num_epochs):
-		self.lstm_train_history = self.lstm_model.fit(self.training_data_ip, self.training_data_op, 
+		self.lstm_train_history = self.lstm_model.fit(self.training_data_ip, self.training_data_op,
 			epochs=num_epochs, batch_size=batch_size, callbacks=self.lstm_callbacks_list)
 
 		# Load the best weights after training
@@ -938,7 +1029,7 @@ class SPOD_base(object):
 	def test_emulator(self):
 		self.testing_data_pred = self.lstm_model.predict(self.testing_data_ip)
 		test_op_shape = self.testing_data_pred.shape
-		
+
 		# if self.lstm_normalize:
 		# 	self.testing_data_pred = self.op_scaler.inverse_transform(
 		# 					self.testing_data_pred.reshape(-1,test_op_shape[-1])).reshape(test_op_shape)
@@ -966,11 +1057,11 @@ class SPOD_base(object):
 			Q_hat_f_pred = np.zeros([self._nx,num_test_blocks], dtype='complex_')
 
 			for iBlk in range(num_test_blocks):
-				Q_hat_f[:,iBlk] = 
+				Q_hat_f[:,iBlk] =
 
 				# compute inner product between Qfft and modes
 				a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
-			
+
 
 			file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
 			a_k = np.load(file_a_k)
@@ -978,10 +1069,3 @@ class SPOD_base(object):
 			print(a_k.shape)
 
 			# self.testing_data_pred
-		
-
-
-			
-
-
-

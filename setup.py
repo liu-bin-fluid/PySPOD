@@ -1,15 +1,16 @@
 import os
 import sys
+import pyspod
 import shutil
 from setuptools import setup
 from setuptools import Command
 
 # GLOBAL VARIABLES
-NAME = "pyspod"
-URL = 'https://github.com/mengaldo/PySPOD'
-AUTHOR = "Gianmarco Mengaldo"
-EMAIL = "gianmarco.mengaldo@gmail.com"
-VERSION = "0.4.3"
+NAME = pyspod.__name__
+URL = pyspod.__url__
+AUTHOR = pyspod.__author__
+EMAIL = pyspod.__email__
+VERSION = pyspod.__version__
 KEYWORDS='spectral-proper-orthogonal-decomposition spod'
 REQUIRED = [
 	"numpy",
@@ -25,7 +26,6 @@ REQUIRED = [
 	"ecmwf_api_client",
 	"cdsapi",
 	"future",
-	"ffmpeg",
 	"pytest",
 ]
 EXTRAS = {
@@ -79,8 +79,6 @@ class UploadCommand(Command):
 		os.system('git tag v{0}'.format(VERSION))
 		os.system('git push --tags')
 		sys.exit()
-
-
 
 # SETUP
 setup(

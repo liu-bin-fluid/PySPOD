@@ -6,17 +6,16 @@ from pathlib import Path
 
 # Paths
 CWD = os.getcwd()
-sys.path.append(os.path.join(CWD,"../../../"))
 
 # Import library specific modules
+sys.path.append("../../../")
 from pyspod.spod_low_storage import SPOD_low_storage
 from pyspod.spod_low_ram     import SPOD_low_ram
 from pyspod.spod_streaming   import SPOD_streaming
-import pyspod.weights as weights
 
 # Inspect and load data
-file = os.path.join(CWD,'../../../tests/data/earthquakes_data.nc')
-print(os.path.abspath(os.path.join(CWD,'../../../tests/data/earthquakes_data.nc')))
+file = os.path.join('../../../tests/data/earthquakes_data.nc')
+print(os.path.abspath(os.path.join('../../../tests/data/earthquakes_data.nc')))
 ds = xr.open_dataset(file)
 variables = ['slip_potency']
 t = np.array(ds['time'])
@@ -31,7 +30,7 @@ print('X.shape  = ', X.shape)
 # define required and optional parameters
 params = dict()
 params['dt'          ] = 1
-params['nt'          ] = len(t)
+params['nt'          ] = len(t)-1
 params['xdim'        ] = 2
 params['nv'          ] = len(variables)
 params['n_FFT'       ] = np.ceil(32)
@@ -55,7 +54,7 @@ params['conf_level'  ] = 0.95   # calculate confidence level
 params['savefft'     ] = False  # save FFT blocks to reuse them in the future (saves time)
 
 # Perform SPOD analysis using low storage module
-SPOD_analysis = SPOD_streaming(X=X, params=params, data_handler=False, variables=variables)
+SPOD_analysis = SPOD_streaming(data=X, params=params, data_handler=False, variables=variables)
 spod = SPOD_analysis.fit()
 
 # Show results

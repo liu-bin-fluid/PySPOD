@@ -7,10 +7,11 @@ sys.path.append("../../../")
 from pyspod.spod_low_storage import SPOD_low_storage
 from pyspod.spod_low_ram     import SPOD_low_ram
 from pyspod.spod_streaming   import SPOD_streaming
-import pyspod.weights as weights
 
-# Current working path
+# Current, parent and file paths
 CWD = os.getcwd()
+
+
 
 # Let's create some 2D syntetic data
 # and store them into a variable called p

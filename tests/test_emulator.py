@@ -95,7 +95,7 @@ def test_burgers_spod():
 	freq = spod.freq
 	spod.plot_eigs()
 	spod.plot_1D_modes_at_frequency(freq_required=1/T_approx, freq=freq, modes_idx=[0,1,2])
-	spod.plot_eigs_vs_period()
+	spod.plot_eigs_vs_period(freq=spod.freq)
 	modes = spod.modes
 	eigs = spod.eigs
 	spod.compute_coeffs()

@@ -514,7 +514,7 @@ class SPOD_base(object):
 		X = np.squeeze(X)
 
 		# assemble modes for all frequency
-		coeffs_sum = np.sum(self.modes, axis=2)
+		# coeffs_sum = np.sum(self.modes, axis=2)
 		# coeffs_sum = np.zeros([self.n_modes_save,self.nt])
 		m = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
 		for iFreq in tqdm(range(0, self._n_freq), desc='getting modes'):

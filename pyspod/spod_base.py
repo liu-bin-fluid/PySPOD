@@ -309,6 +309,16 @@ class SPOD_base(object):
 		return self._weights
 
 	@property
+	def Q_blk_hats(self):
+		'''
+		Get the dictionary containing the path to the Q_blk_hats saved.
+
+		:return: the dictionary containing the path to the Q_blk_hats saved.
+		:rtype: dict
+		'''
+		return self._Q_blk_hats
+
+	@property
 	def modes(self):
 		'''
 		Get the dictionary containing the path to the SPOD modes saved.
@@ -517,9 +527,12 @@ class SPOD_base(object):
 		# coeffs_sum = np.sum(self.modes, axis=2)
 		# coeffs_sum = np.zeros([self.n_modes_save,self.nt])
 		m = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
+		q = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
 		for iFreq in tqdm(range(0, self._n_freq), desc='getting modes'):
 			m[iFreq,...] = self.get_modes_at_freq(iFreq)
+			q[iFreq,...] = self.get_q_at_freq(iFreq)
 		m = np.squeeze(m)
+		print(q)
 		print('self.weights.shape = ', self.weights.shape)
 		print('m.shape = ', m.shape)
 		print('X.shape = ', X.shape)
@@ -593,7 +606,20 @@ class SPOD_base(object):
 		if self._isrealx:
 			Q_blk_hat[1:-1,:] = 2 * Q_blk_hat[1:-1,:]
 
-		return Q_blk_hat, offset
+		# print info file
+		print('block '+str(iBlk+1)+'/'+str(self._n_blocks)+\
+			  ' ('+str(offset)+':'+str(self._n_DFT+offset)+'); ',
+			  '    Saving to directory: ', self._save_dir_blocks)
+
+		# save FFT blocks in storage memory
+		file = dict()
+		for iFreq in range(0,self._n_freq):
+			file[iFreq] = os.path.join(self._save_dir_blocks,
+				'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+			Q_blk_hat_fi = Q_blk_hat[iFreq,:]
+			np.save(file[iFreq], Q_blk_hat_fi)
+
+		return Q_blk_hat, offset, file
 
 
 
@@ -661,6 +687,18 @@ class SPOD_base(object):
 		xi, idx = post.find_nearest_coords(coords=coords, x=x, data_space_dim=self.xshape)
 		return xi, idx
 
+	def get_blocks(self):
+		'''
+		See method implementation in the postprocessing module.
+		'''
+		if self._Q_hat_paths is None:
+			raise ValueError('Q_hat_files not found. Consider running fit()')
+		elif isinstance(self._Q_hat_paths, dict):
+			Q_hat = post.get_blocks_from_file(self._Q_hat_paths)
+		else:
+			raise TypeError('Modes must be a dictionary')
+		return Q_hat
+
 	def get_modes_at_freq(self, freq_idx):
 		'''
 		See method implementation in the postprocessing module.
@@ -672,8 +710,8 @@ class SPOD_base(object):
 				sys.getsizeof(complex()) * BYTE_TO_GB
 			gb_vram_avail = psutil.virtual_memory()[1] * BYTE_TO_GB
 			gb_sram_avail = psutil.swap_memory()[2] * BYTE_TO_GB
-			print('- RAM required for loading all modes ~', gb_memory_modes, 'GB')
-			print('- Available RAM memory               ~', gb_vram_avail  , 'GB')
+			# print('- RAM required for loading all modes ~', gb_memory_modes, 'GB')
+			# print('- Available RAM memory               ~', gb_vram_avail  , 'GB')
 			if gb_memory_modes >= gb_vram_avail:
 				raise ValueError('Not enough RAM memory to load modes stored, '
 								 'for all frequencies.')
@@ -699,6 +737,15 @@ class SPOD_base(object):
 			X = self._data[t_0, t_end]
 		return X
 
+	def get_block_paths(self, n_blocks, n_freq, saveDir):
+		print('Getting block paths ...')
+		self._Q_hat_paths = dict()
+		for iBlk in range(0, n_blocks):
+			self._Q_hat_paths[iBlk] = dict()
+			for iFreq in range(0, n_freq):
+				file = os.path.join(saveDir,
+					'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+				self._Q_hat_paths[iBlk][iFreq] = file
 	# ---------------------------------------------------------------------------
 
 

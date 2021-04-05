@@ -51,13 +51,14 @@ class SPOD_low_storage(SPOD_base):
 							 'consider running spod_low_ram to avoid system freezing.')
 
 		# check if blocks are already saved in memory
-		blocks_present = self._are_blocks_present(self._n_blocks,self._n_freq,self._save_dir_blocks)
+		blocks_present = self._are_blocks_present(self._n_blocks, self._n_freq, self._save_dir_blocks)
 
 		Q_blk = np.empty([self._n_DFT,int(self._nx*self._nv)])
 		Q_hat = np.empty([self._n_freq,self._nx*self.nv,self._n_blocks], dtype='complex_')
 		Q_blk_hat = np.empty([self._n_DFT,int(self._nx*self._nv)], dtype='complex_')
 
 		if blocks_present:
+
 			# load blocks if present
 			for iFreq in range(0,self._n_freq):
 				for iBlk in range(0,self._n_blocks):
@@ -67,25 +68,19 @@ class SPOD_low_storage(SPOD_base):
 		else:
 			# loop over number of blocks and generate Fourier realizations
 			# if blocks are not saved in storage
+			self._Q_hat_files = dict()
 			for iBlk in range(0,self._n_blocks):
 
 				# compute block
-				Q_blk_hat, offset = self.compute_blocks(iBlk)
-
-				# print info file
-				print('block '+str(iBlk+1)+'/'+str(self._n_blocks)+\
-					  ' ('+str(offset)+':'+str(self._n_DFT+offset)+')')
-
-				# save FFT blocks in storage memory if required
-				if self._savefft:
-					for iFreq in range(0,self._n_freq):
-						file = os.path.join(self._save_dir_blocks,
-							'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-						Q_blk_hat_fi = Q_blk_hat[iFreq,:]
-						np.save(file, Q_blk_hat_fi)
+				Q_blk_hat, offset, files = self.compute_blocks(iBlk)
+				print('Q_blk_hat.shape = ', Q_blk_hat.shape)
 
 				# store FFT blocks in RAM
 				Q_hat[:,:,iBlk] = Q_blk_hat
+
+				# save paths to files in class variable
+				for iFreq in range(0,self._n_freq):
+					self._Q_hat_files[iBlk] = files
 		print('--------------------------------------')
 
 

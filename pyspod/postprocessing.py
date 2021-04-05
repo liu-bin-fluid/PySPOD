@@ -95,6 +95,29 @@ def get_modes_at_freq(modes, freq_idx):
 
 
 
+def get_blocks_from_file(filenames):
+	"""
+	Load blocks Q_hat from file
+
+	:param str filename: path from where to load blocks Q_hat.
+
+	:return: the [n_, n_vars, n_modes]
+		matrix containing the requested blocks Q_hat from file.
+	:rtype: numpy.ndarray
+	"""
+	Q_hat_tmp = np.load(filenames[0][0])
+	Q_hat = np.empty([len(filenames[0].keys()), Q_hat_tmp.shape[0], len(filenames.keys())])
+	for iBlk in filenames.keys():
+		for iFreq in filenames[iBlk].keys():
+			_, ext = splitext(filenames[iBlk][iFreq])
+			if ext.lower() == '.npy':
+				Q_hat[iFreq,:,iBlk] = np.load(filenames[iBlk][iFreq])
+			else:
+				raise ValueError(ext, 'file extension not recognized.')
+	return Q_hat
+
+
+
 def get_mode_from_file(filename):
 	"""
 	Load SPOD modes from file

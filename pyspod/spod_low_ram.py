@@ -45,23 +45,16 @@ class SPOD_low_ram(SPOD_base):
 		# loop over number of blocks and generate Fourier realizations,
 		# if blocks are not saved in storage
 		if not blocks_present:
+			self._Q_hat_files = dict()
 			Q_blk = np.zeros([self._n_DFT,self._nx], dtype='complex_')
-			for iBlk in range(0,self._n_blocks):
+			for iBlk in range(0, self._n_blocks):
 
 				# compute block
-				Q_blk_hat, offset = self.compute_blocks(iBlk)
+				Q_blk_hat, offset, files = self.compute_blocks(iBlk)
 
-				# print info file
-				print('block '+str(iBlk+1)+'/'+str(self._n_blocks)+\
-					  ' ('+str(offset)+':'+str(self._n_DFT+offset)+'); ',
-					  '    Saving to directory: ', self._save_dir_blocks)
-
-				# save FFT blocks in storage memory
-				for iFreq in range(0,self._n_freq):
-					file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-					Q_blk_hat_fi = Q_blk_hat[iFreq,:]
-					np.save(file, Q_blk_hat_fi)
-
+				# save paths to files in class variable
+				for iFreq in range(0, self._n_freq):
+					self._Q_hat_files[iBlk] = files
 		print('------------------------------------')
 
 
@@ -75,8 +68,8 @@ class SPOD_low_ram(SPOD_base):
 
 		gb_memory_modes = self._n_freq * self._nx * self._n_modes_save * sys.getsizeof(complex()) * BYTE_TO_GB
 		gb_memory_avail = shutil.disk_usage(CWD)[2] * BYTE_TO_GB
-		print('- Memory required for storing modes ~', gb_memory_modes , 'GB')
-		print('- Available storage memory          ~', gb_memory_avail , 'GB')
+		# print('- Memory required for storing modes ~', gb_memory_modes , 'GB')
+		# print('- Available storage memory          ~', gb_memory_avail , 'GB')
 		while gb_memory_modes >= 0.99 * gb_memory_avail:
 			print('Not enough storage memory to save all modes... halving modes to save.')
 			n_modes_save = np.floor(self._n_modes_save / 2)
@@ -96,7 +89,7 @@ class SPOD_low_ram(SPOD_base):
 			# load FFT data from previously saved file
 			Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
 			for iBlk in range(0,self._n_blocks):
-				file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+				file = os.path.join(self._save_dir_blocks, 'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
 				Q_hat_f[:,iBlk] = np.load(file)
 
 			# compute standard spod
@@ -105,12 +98,8 @@ class SPOD_low_ram(SPOD_base):
 		# store and save results
 		self.store_and_save()
 
-		# delete FFT blocks from memory if saving not required
-		if self._savefft == False:
-			for iBlk in range(0,self._n_blocks):
-				for iFreq in range(0,self._n_freq):
-					file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-					os.remove(file)
+
+
 		print('------------------------------------')
 		print(' ')
 		print('Results saved in folder ', self._save_dir_blocks)

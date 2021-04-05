@@ -85,7 +85,7 @@ class SPOD_base(object):
 		# get default spectral estimation parameters and options
 		self._window, self._weights, \
 		self._n_overlap, self._n_DFT, \
-		self._n_blocks, self._x_mean, \
+		self._n_blocks, self._t_mean, \
 		self._mean_type, self._freq, \
 		self._n_freq = self.parse_parameters( \
 				isrealx=self._isrealx,
@@ -289,6 +289,26 @@ class SPOD_base(object):
 		return self._n_modes_save
 
 	@property
+	def t_mean(self):
+		'''
+		Get the time mean.
+
+		:return: the time mean.
+		:rtype: double
+		'''
+		return self._t_mean
+
+	@property
+	def weights(self):
+		'''
+		Get the weights used.
+
+		:return: the weights used for SPOD.
+		:rtype: numpy.ndarray
+		'''
+		return self._weights
+
+	@property
 	def modes(self):
 		'''
 		Get the dictionary containing the path to the SPOD modes saved.
@@ -297,6 +317,15 @@ class SPOD_base(object):
 		:rtype: dict
 		'''
 		return self._modes
+
+	def coeffs(self):
+		'''
+		Get the dictionary containing the path to the SPOD coefficients saved.
+
+		:return: the dictionary containing the path to the SPOD coefficients saved.
+		:rtype: dict
+		'''
+		return self._coeffs
 
 	# ---------------------------------------------------------------------------
 
@@ -375,16 +404,19 @@ class SPOD_base(object):
 				split_block = self.nt // n_blocks
 				split_res = self.nt % n_blocks
 				x_sum = np.zeros(self.xshape+(self.nv,))
-				for iBlk in range(0,n_blocks):
+				for iBlk in range(0, n_blocks):
 					lb = iBlk * split_block
 					ub = lb + split_block
 					x_data = self._data_handler(
 						data=self._data, t_0=lb, t_end=ub, variables=self.variables)
 					x_sum += np.sum(x_data, axis=0)
-				x_data = self._data_handler(
-					data=self._data, t_0=self.nt-split_res, t_end=self.nt,
-					variables=self.variables)
-				x_sum += np.sum(x_data, axis=0)
+				if split_res > 0:
+					x_data = self._data_handler(
+						data=self._data,
+						t_0=self.nt-split_res,
+						t_end=self.nt,
+						variables=self.variables)
+					x_sum += np.sum(x_data, axis=0)
 				x_mean = x_sum / self.nt
 				x_mean = np.reshape(x_mean,(int(self.nx*self.nv)))
 				mean_name = 'longtime'
@@ -444,6 +476,89 @@ class SPOD_base(object):
 	# Common methods
 	# ---------------------------------------------------------------------------
 
+	# def get_coefficients(self):
+	# 	'''
+	# 	Get Fourier transformed data and modes
+	# 	'''
+	#
+	# 	'''
+	# 	Inner product for projection - requires loading Qfft blocks
+	# 	'''
+	# 	# Load modes
+	# 	n_modes_save = self._n_blocks
+	# 	if 'n_modes_save' in self._params: n_modes_save = self._params['n_modes_save']
+	#
+	# 	# For each frequency
+	# 	for iFreq in tqdm(range(0,self._n_freq), desc='computing coeffs'):
+	# 		# load FFT data from previously saved file
+	# 		Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
+	# 		for iBlk in range(0, self.n_modes_save):
+	# 			file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+	# 			Q_hat_f[:,iBlk] = np.load(file)
+	#
+	# 		file_psi = os.path.join(self._save_dir_blocks,'modes1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
+	# 		Psi = np.load(file_psi)
+	# 		Psi = Psi.reshape(-1,n_modes_save)
+	#
+	# 		# compute inner product between Qfft and modes
+	# 		a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
+	# 		# Save these coefficients for posterity
+	# 		file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
+	# 		np.save(file_a_k, a_k)
+
+
+	def compute_coeffs(self):
+
+		# get data matrix
+		X = self.get_data(t_0=0, t_end=self.nt)
+		X = np.squeeze(X)
+
+		# assemble modes for all frequency
+		coeffs_sum = np.sum(self.modes, axis=2)
+		# coeffs_sum = np.zeros([self.n_modes_save,self.nt])
+		m = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
+		for iFreq in tqdm(range(0, self._n_freq), desc='getting modes'):
+			m[iFreq,...] = self.get_modes_at_freq(iFreq)
+		m = np.squeeze(m)
+		print('self.weights.shape = ', self.weights.shape)
+		print('m.shape = ', m.shape)
+		print('X.shape = ', X.shape)
+		# tmp = (m * self.weights) @ X
+		m_prime = np.empty([m.shape[1], m.shape[0], m.shape[2]])
+		self._coeffs = np.empty([m.shape[0], X.shape[0], m.shape[2]])
+		self._dynamics = np.zeros([X.shape[1], X.shape[0]])
+		for k in tqdm(range(m.shape[2]), desc='computing coeffs'):
+			m_prime[...,k] = m[...,k].conj().T
+			# S = la.inv((m_prime[...,k] * self.weights) @ m[...,k])
+
+			# equation (2.7), https://arxiv.org/pdf/2012.02902.pdf
+			self._coeffs[...,k] = (m_prime[...,k] * self.weights).T @ (X - self.t_mean).T
+			self._dynamics += m[...,k].T @ self._coeffs[...,k]
+
+			import matplotlib.pyplot as plt
+			plt.plot(self._coeffs[0,:,k], label='coeffs')
+			plt.legend()
+			plt.show()
+
+			plt.plot(X[-1,:], label='true X')
+			plt.plot(self._dynamics[:,-1], label='reduced X')
+			plt.legend()
+			plt.show()
+
+
+
+
+
+
+	# def inverse_transform(self, X):
+	#
+	#     m = self.spod_modes.shape
+	#     U = self.spod_modes.reshape((m[0], -1))
+	#
+	#     return U @ X + self.mean_
+
+
+
 	def compute_blocks(self, iBlk):
 
 		# get time index for present block
@@ -455,7 +570,7 @@ class SPOD_base(object):
 		Q_blk = Q_blk.reshape(self._n_DFT, self._nx * self._nv)
 
 		# Subtract longtime or provided mean
-		Q_blk = Q_blk[:] - self._x_mean
+		Q_blk = Q_blk[:] - self._t_mean
 
 		# if block mean is to be subtracted, do it now that all data is collected
 		if self._mean_type.lower() == 'blockwise':
@@ -716,6 +831,27 @@ class SPOD_base(object):
 			figsize=figsize, show_axes=show_axes, equal_axes=equal_axes,
 			path=self.save_dir, filename=filename)
 
+	def plot_1D_modes_at_frequency(self,
+								   freq_required,
+								   freq,
+								   vars_idx=[0],
+								   modes_idx=[0],
+								   x1=None,
+								   fftshift=False,
+								   imaginary=False,
+								   title='',
+								   xticks=None,
+								   figsize=(12,8),
+								   filename=None):
+		'''
+		See method implementation in the postprocessing module.
+		'''
+		post.plot_1D_modes_at_frequency(
+			self.modes, freq_required=freq_required, freq=freq, vars_idx=vars_idx,
+			modes_idx=modes_idx, x1=x1, fftshift=fftshift, imaginary=imaginary,
+			title=title, xticks=xticks, figsize=figsize, path=self.save_dir,
+			filename=filename)
+
 	def plot_2D_modes_at_frequency(self,
 								   freq_required,
 								   freq,
@@ -733,7 +869,7 @@ class SPOD_base(object):
 								   figsize=(12,8),
 								   equal_axes=False,
 								   filename=None,
-                                   origin=None):
+								   origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''
@@ -785,7 +921,7 @@ class SPOD_base(object):
 										 figsize=(12,8),
 										 equal_axes=False,
 										 filename=None,
-                                         origin=None):
+										 origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''
@@ -816,6 +952,23 @@ class SPOD_base(object):
 			x=x, vars_idx=vars_idx, modes_idx=modes_idx, fftshift=fftshift,
 			title=title, figsize=figsize, path=self.save_dir, filename=filename)
 
+	def plot_1D_data(self,
+					 time_idx=[0],
+					 vars_idx=[0],
+					 x1=None,
+					 title='',
+					 figsize=(12,8),
+					 filename=None):
+		'''
+		See method implementation in the postprocessing module.
+		'''
+		max_time_idx = np.max(time_idx)
+		post.plot_1D_data(
+			X=self.get_data(t_0=0, t_end=max_time_idx+1),
+			time_idx=time_idx, vars_idx=vars_idx,
+			x1=x1, title=title, figsize=figsize,
+			path=self.save_dir, filename=filename)
+
 	def plot_2D_data(self,
 					 time_idx=[0],
 					 vars_idx=[0],
@@ -825,7 +978,7 @@ class SPOD_base(object):
 					 coastlines='',
 					 figsize=(12,8),
 					 filename=None,
-                     origin=None):
+					 origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''
@@ -834,7 +987,7 @@ class SPOD_base(object):
 			X=self.get_data(t_0=0, t_end=max_time_idx+1),
 			time_idx=time_idx, vars_idx=vars_idx, x1=x1, x2=x2,
 			title=title, coastlines=coastlines, figsize=figsize,
-			path=self.save_dir, filename=filename)
+			path=self.save_dir, filename=filename, origin=origin)
 
 	def plot_data_tracers(self,
 						  coords_list,
@@ -884,35 +1037,36 @@ class SPOD_base(object):
 
 	# Data-driven emulation (after modes and DFT blocks are saved to disk)
 	# ---------------------------------------------------------------------------
-	def get_coefficients(self):
-		'''
-		Get Fourier transformed data and modes
-		'''
+	# def get_coefficients(self):
+	# 	'''
+	# 	Get Fourier transformed data and modes
+	# 	'''
+	#
+	# 	'''
+	# 	Inner product for projection - requires loading Qfft blocks
+	# 	'''
+	# 	# Load modes
+	# 	n_modes_save = self._n_blocks
+	# 	if 'n_modes_save' in self._params: n_modes_save = self._params['n_modes_save']
+	#
+	# 	# For each frequency
+	# 	for iFreq in tqdm(range(0,self._n_freq),desc='computing coefficients'):
+	# 		# load FFT data from previously saved file
+	# 		Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
+	# 		for iBlk in range(0,self._n_blocks):
+	# 			file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+	# 			Q_hat_f[:,iBlk] = np.load(file)
+	#
+	# 		file_psi = os.path.join(self._save_dir_blocks,'modes1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
+	# 		Psi = np.load(file_psi)
+	# 		Psi = Psi.reshape(-1,n_modes_save)
+	#
+	# 		# compute inner product between Qfft and modes
+	# 		a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
+	# 		# Save these coefficients for posterity
+	# 		file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
+	# 		np.save(file_a_k, a_k)
 
-		'''
-		Inner product for projection - requires loading Qfft blocks
-		'''
-		# Load modes
-		n_modes_save = self._n_blocks
-		if 'n_modes_save' in self._params: n_modes_save = self._params['n_modes_save']
-
-		# For each frequency
-		for iFreq in tqdm(range(0,self._n_freq),desc='computing coefficients'):
-			# load FFT data from previously saved file
-			Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
-			for iBlk in range(0,self._n_blocks):
-				file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-				Q_hat_f[:,iBlk] = np.load(file)
-
-			file_psi = os.path.join(self._save_dir_blocks,'modes1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
-			Psi = np.load(file_psi)
-			Psi = Psi.reshape(-1,n_modes_save)
-
-			# compute inner product between Qfft and modes
-			a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
-			# Save these coefficients for posterity
-			file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
-			np.save(file_a_k, a_k)
 
 	def build_emulator(self):
 
@@ -1056,16 +1210,16 @@ class SPOD_base(object):
 			# Compute FFT data from modes and LSTM predicted coefficients
 			Q_hat_f_pred = np.zeros([self._nx,num_test_blocks], dtype='complex_')
 
-			for iBlk in range(num_test_blocks):
-				Q_hat_f[:,iBlk] =
-
-				# compute inner product between Qfft and modes
-				a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
-
-
-			file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
-			a_k = np.load(file_a_k)
-
-			print(a_k.shape)
+			# for iBlk in range(num_test_blocks):
+			# 	# Q_hat_f[:,iBlk] =
+			#
+			# 	# compute inner product between Qfft and modes
+			# 	a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
+			#
+			#
+			# file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
+			# a_k = np.load(file_a_k)
+			#
+			# print(a_k.shape)
 
 			# self.testing_data_pred

@@ -287,6 +287,116 @@ def plot_eigs_vs_period(eigs, freq, title='', xticks=None, yticks=None,
 
 
 
+def plot_1D_modes_at_frequency(modes, freq_required, freq, vars_idx=[0], modes_idx=[0],
+	x1=None, fftshift=False, imaginary=False, title='', xticks=None, figsize=(12,8),
+	path='CWD', filename=None):
+	"""
+	Plot SPOD modes for 1D problems.
+
+	:param numpy.ndarray modes: 1D SPOD modes.
+	:param double freq_required: frequency to be plotted.
+	:param numpy.ndarray freq: frequency array.
+	:param int or sequence(int) vars_idx: variables to be plotted. \
+		Default, the first variable is plotted.
+	:param int or sequence(int) modes_idx: modes to be plotted. \
+		Default, the first mode is plotted.
+	:param numpy.ndarray x1: x-axis coordinate.
+	:param bool fftshift: whether to perform fft-shifting. \
+		Default is False.
+	:param bool imaginary: whether to plot imaginary part. \
+		Default is False
+	:param str title: if specified, title of the plot. Default is ''.
+	:param tuple or list xticks: ticks to be set on x-axis. Default is None.
+	:param tuple(int,int) figsize: size of the figure (width,height). \
+		Default is (12,8).
+	:param str path: if specified, the plot is saved at `path`. \
+		Default is CWD.
+	:param str filename: if specified, the plot is saved at `filename`. \
+		Default is None.
+	"""
+	# get idx variables
+	vars_idx = _check_vars(vars_idx)
+
+	# get idx modes
+	if isinstance(modes_idx, int):
+		modes_idx = [modes_idx]
+	if not isinstance(modes_idx, (list,tuple)):
+		raise TypeError('`modes_idx` must be a list or tuple')
+
+	# get modes at required frequency
+	freq_val, freq_idx = find_nearest_freq(freq_required=freq_required, freq=freq)
+	modes = get_modes_at_freq(modes=modes, freq_idx=freq_idx)
+
+	# if domain dimensions have not been passed, use data dimensions
+	if x1 is None:
+		x1 = np.arange(modes.shape[0])
+
+	# loop over variables and modes
+	for var_id in vars_idx:
+		for mode_id in modes_idx:
+
+			# initialize figure
+			fig = plt.figure(figsize=figsize, frameon=True, constrained_layout=False)
+
+			# extract mode
+			mode = np.squeeze(modes[:,var_id,mode_id])
+
+			# check dimensions
+			if mode.ndim != 1:
+				raise ValueError('Dimension of the modes is not 1D.')
+
+			# perform fft shift if required
+			if fftshift:
+				mode = np.fft.fftshift(mode, axes=1)
+
+			# check dimension axes and data
+			if x1.shape[0] != mode.shape[0]:
+				raise ValueError('Data dimension Z = N; x1 must have dimension N.')
+
+			# plot data
+			if imaginary:
+				real_ax = fig.add_subplot(1, 2, 1)
+				real = real_ax.plot(x1, np.real(mode).T)
+				imag_ax = fig.add_subplot(1, 2, 2)
+				imag = imag_ax.contourf(x1, np.imag(mode).T)
+
+				# axis management
+				real_ax, xticks, yticks = _format_axes(real_ax, xticks, yticks=False)
+				imag_ax, xticks, yticks = _format_axes(imag_ax, xticks, yticks=False)
+				if len(title) > 1:
+					fig.suptitle(title + \
+						', mode: {}, variable ID: {}'.format(mode_id, var_id))
+				else:
+					fig.suptitle('mode: {}, variable ID: {}'.format(mode_id, var_id))
+				real_ax.set_title('Real part')
+				imag_ax.set_title('Imaginary part')
+			else:
+				real_ax = plt.gca()
+				real = real_ax.plot(x1, np.real(mode).T)
+
+				# axis management
+				real_ax, xticks, yticks = _format_axes(real_ax, xticks, yticks=False)
+				if len(title) > 1:
+					real_ax.set_title(title + \
+						', mode: {}, variable ID: {}'.format(mode_id, var_id))
+				else:
+					real_ax.set_title('mode: {}, variable ID: {}'.format(mode_id, var_id))
+
+			# padding between elements
+			plt.tight_layout(pad=2.)
+
+			# save or show plots
+			if filename:
+				if path == 'CWD': path = CWD
+				basename, ext = splitext(filename)
+				filename = '{0}_var{1}_mode{2}{3}'.format(basename, var_id, mode_id, ext)
+				plt.savefig(os.path.join(path,filename),dpi=400)
+				plt.close(fig)
+			if not filename:
+				plt.show()
+
+
+
 def plot_2D_modes_at_frequency(modes, freq_required, freq, vars_idx=[0], modes_idx=[0],
 	x1=None, x2=None, fftshift=False, imaginary=False, plot_max=False, coastlines='',
 	title='', xticks=None, yticks=None, figsize=(12,8), equal_axes=False, path='CWD',
@@ -938,6 +1048,75 @@ def plot_mode_tracers(modes, freq_required, freq, coords_list, x=None, vars_idx=
 				basename, ext = splitext(filename)
 				filename = '{0}_coords{1}_var{2}_mode{3}{4}'.format(
 					basename, coords, var_id, mode_id, ext)
+				plt.savefig(os.path.join(path,filename), dpi=200)
+				plt.close(fig)
+			if not filename:
+				plt.show()
+
+
+
+def plot_1D_data(X, time_idx=[0], vars_idx=[0], x1=None,
+	title='', figsize=(12,8), path='CWD', filename=None):
+	"""
+	Plot 1D data.
+
+	:param numpy.ndarray X: 1D data to be plotted. \
+		First dimension must be time. Last dimension must be variable.
+	:param list vars_idx: list of variables to plot. Default, \
+		first variable is plotted.
+	:param list time_idx: list of time indices to plot. Default, \
+		first time index is plotted.
+	:param numpy.ndarray x1: x-axis coordinate. Default is None.
+	:param str title: if specified, title of the plot. Default is ''.
+	:param tuple(int,int) figsize: size of the figure (width,height). \
+		Default is (12,8).
+	:param str path: if specified, the plot is saved at `path`. \
+		Default is CWD.
+	:param str filename: if specified, the plot is saved at `filename`.
+
+	"""
+	# check dimensions
+	if X.ndim != 3:
+		raise ValueError('Dimension of data is not 1D.')
+
+	# get idx variables
+	vars_idx = _check_vars(vars_idx)
+
+	# if domain dimensions have not been passed, use data dimensions
+	if x1 is None:
+		x1 = np.arange(X.shape[1])
+
+	# get time index
+	if isinstance(time_idx, int):
+		time_idx = [time_idx]
+	if not isinstance(time_idx, (list,tuple)):
+		raise TypeError('`time_idx` must be a list or tuple')
+
+	# loop over variables and time indices
+	for var_id in vars_idx:
+		for time_id in time_idx:
+
+			fig = plt.figure(figsize=figsize)
+			if len(title) > 1:
+				fig.suptitle(title + ', time index {}, variable {}'.format(time_id, var_id))
+			else:
+				fig.suptitle('time index {}, variable {}'.format(time_id, var_id))
+
+			# get 1D data
+			x = np.real(X[time_id,...,var_id])
+
+			# check dimension axes and data
+			if x1.shape[0] != x.shape[0]:
+				raise ValueError('Data dimension Z = (N); x1 must have dimension N.')
+
+			# plot data
+			contour = plt.plot(x1, x.T)
+
+			# save or show plots
+			if filename:
+				if path == 'CWD': path = CWD
+				basename, ext = splitext(filename)
+				filename = '{0}_var{1}_time{2}{3}'.format(basename, var_id, time_id, ext)
 				plt.savefig(os.path.join(path,filename), dpi=200)
 				plt.close(fig)
 			if not filename:

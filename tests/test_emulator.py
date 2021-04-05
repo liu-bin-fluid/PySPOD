@@ -87,14 +87,15 @@ def test_burgers_spod():
 
 
 	# let's plot the data
-	# spod.plot_1D_data(time_idx=[0,99,199,299,399])
-	# spod.plot_data_tracers(coords_list=[(10,)], time_limits=[0,t.shape[0]])
+	spod.plot_1D_data(time_idx=[0,99,199,299,399])
+	spod.plot_data_tracers(coords_list=[(10,)], time_limits=[0,t.shape[0]])
 
 	# show results
 	T_approx = 10
 	freq = spod.freq
-	# spod.plot_1D_modes_at_frequency(freq_required=1/T_approx, freq=freq, modes_idx=[0,1,2])
-	# spod.plot_eigs_vs_period()
+	spod.plot_eigs()
+	spod.plot_1D_modes_at_frequency(freq_required=1/T_approx, freq=freq, modes_idx=[0,1,2])
+	spod.plot_eigs_vs_period()
 	modes = spod.modes
 	eigs = spod.eigs
 	spod.compute_coeffs()

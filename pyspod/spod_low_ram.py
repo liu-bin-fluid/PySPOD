@@ -40,7 +40,7 @@ class SPOD_low_ram(SPOD_base):
 		print('------------------------------------')
 
 		# check if blocks are already saved in memory
-		blocks_present = self._are_blocks_present(self._n_blocks,self._n_freq,self._save_dir_blocks)
+		blocks_present = self._are_blocks_present(self._n_blocks, self._n_freq, self._save_dir_blocks)
 
 		# loop over number of blocks and generate Fourier realizations,
 		# if blocks are not saved in storage
@@ -50,11 +50,7 @@ class SPOD_low_ram(SPOD_base):
 			for iBlk in range(0, self._n_blocks):
 
 				# compute block
-				Q_blk_hat, offset, files = self.compute_blocks(iBlk)
-
-				# save paths to files in class variable
-				for iFreq in range(0, self._n_freq):
-					self._Q_hat_files[iBlk] = files
+				Q_blk_hat, offset = self.compute_blocks(iBlk)
 		print('------------------------------------')
 
 

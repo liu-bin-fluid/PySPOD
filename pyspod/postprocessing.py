@@ -648,7 +648,7 @@ def plot_2D_mode_slice_vs_time(modes, freq_required, freq, vars_idx=[0],
 	t = np.linspace(0,period,n_points)
 
 	# pre-compute auxiliary phase vector and shape it accordingly
-	phase = np.exp(complex(0,1) * np.linspace(0,2*np.pi,n_points))
+	phase = np.exp(complex(0,1) * np.linspace(0,2 * np.pi, n_points))
 	phase = np.reshape(phase,(1,phase.shape[0]))
 
 	# get width and height figure

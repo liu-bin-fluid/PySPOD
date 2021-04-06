@@ -72,15 +72,10 @@ class SPOD_low_storage(SPOD_base):
 			for iBlk in range(0,self._n_blocks):
 
 				# compute block
-				Q_blk_hat, offset, files = self.compute_blocks(iBlk)
-				print('Q_blk_hat.shape = ', Q_blk_hat.shape)
+				Q_blk_hat, offset = self.compute_blocks(iBlk)
 
 				# store FFT blocks in RAM
 				Q_hat[:,:,iBlk] = Q_blk_hat
-
-				# save paths to files in class variable
-				for iFreq in range(0,self._n_freq):
-					self._Q_hat_files[iBlk] = files
 		print('--------------------------------------')
 
 

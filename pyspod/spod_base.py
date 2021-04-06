@@ -12,8 +12,10 @@ import warnings
 import numpy as np
 from tqdm import tqdm
 from scipy.fft import fft
+from scipy.fft import ifft
 import scipy.special as sc
 from numpy import linalg as la
+import matplotlib.pyplot as plt
 
 # Import custom Python packages
 import pyspod.postprocessing as post
@@ -316,7 +318,7 @@ class SPOD_base(object):
 		:return: the dictionary containing the path to the Q_blk_hats saved.
 		:rtype: dict
 		'''
-		return self._Q_blk_hats
+		return self._Q_hat
 
 	@property
 	def modes(self):
@@ -486,92 +488,6 @@ class SPOD_base(object):
 	# Common methods
 	# ---------------------------------------------------------------------------
 
-	# def get_coefficients(self):
-	# 	'''
-	# 	Get Fourier transformed data and modes
-	# 	'''
-	#
-	# 	'''
-	# 	Inner product for projection - requires loading Qfft blocks
-	# 	'''
-	# 	# Load modes
-	# 	n_modes_save = self._n_blocks
-	# 	if 'n_modes_save' in self._params: n_modes_save = self._params['n_modes_save']
-	#
-	# 	# For each frequency
-	# 	for iFreq in tqdm(range(0,self._n_freq), desc='computing coeffs'):
-	# 		# load FFT data from previously saved file
-	# 		Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
-	# 		for iBlk in range(0, self.n_modes_save):
-	# 			file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-	# 			Q_hat_f[:,iBlk] = np.load(file)
-	#
-	# 		file_psi = os.path.join(self._save_dir_blocks,'modes1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
-	# 		Psi = np.load(file_psi)
-	# 		Psi = Psi.reshape(-1,n_modes_save)
-	#
-	# 		# compute inner product between Qfft and modes
-	# 		a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
-	# 		# Save these coefficients for posterity
-	# 		file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(n_modes_save,iFreq))
-	# 		np.save(file_a_k, a_k)
-
-
-	def compute_coeffs(self):
-
-		# get data matrix
-		X = self.get_data(t_0=0, t_end=self.nt)
-		X = np.squeeze(X)
-
-		# assemble modes for all frequency
-		# coeffs_sum = np.sum(self.modes, axis=2)
-		# coeffs_sum = np.zeros([self.n_modes_save,self.nt])
-		m = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
-		q = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
-		for iFreq in tqdm(range(0, self._n_freq), desc='getting modes'):
-			m[iFreq,...] = self.get_modes_at_freq(iFreq)
-			q[iFreq,...] = self.get_q_at_freq(iFreq)
-		m = np.squeeze(m)
-		print(q)
-		print('self.weights.shape = ', self.weights.shape)
-		print('m.shape = ', m.shape)
-		print('X.shape = ', X.shape)
-		# tmp = (m * self.weights) @ X
-		m_prime = np.empty([m.shape[1], m.shape[0], m.shape[2]])
-		self._coeffs = np.empty([m.shape[0], X.shape[0], m.shape[2]])
-		self._dynamics = np.zeros([X.shape[1], X.shape[0]])
-		for k in tqdm(range(m.shape[2]), desc='computing coeffs'):
-			m_prime[...,k] = m[...,k].conj().T
-			# S = la.inv((m_prime[...,k] * self.weights) @ m[...,k])
-
-			# equation (2.7), https://arxiv.org/pdf/2012.02902.pdf
-			self._coeffs[...,k] = (m_prime[...,k] * self.weights).T @ (X - self.t_mean).T
-			self._dynamics += m[...,k].T @ self._coeffs[...,k]
-
-			import matplotlib.pyplot as plt
-			plt.plot(self._coeffs[0,:,k], label='coeffs')
-			plt.legend()
-			plt.show()
-
-			plt.plot(X[-1,:], label='true X')
-			plt.plot(self._dynamics[:,-1], label='reduced X')
-			plt.legend()
-			plt.show()
-
-
-
-
-
-
-	# def inverse_transform(self, X):
-	#
-	#     m = self.spod_modes.shape
-	#     U = self.spod_modes.reshape((m[0], -1))
-	#
-	#     return U @ X + self.mean_
-
-
-
 	def compute_blocks(self, iBlk):
 
 		# get time index for present block
@@ -619,7 +535,7 @@ class SPOD_base(object):
 			Q_blk_hat_fi = Q_blk_hat[iFreq,:]
 			np.save(file[iFreq], Q_blk_hat_fi)
 
-		return Q_blk_hat, offset, file
+		return Q_blk_hat, offset
 
 
 
@@ -653,6 +569,135 @@ class SPOD_base(object):
 		if self._conf_interval:
 			self._eigs_c[iFreq,:,0] = self._eigs[iFreq,:] * 2 * self._n_blocks / self._xi2_lower
 			self._eigs_c[iFreq,:,1] = self._eigs[iFreq,:] * 2 * self._n_blocks / self._xi2_upper
+
+
+
+	def get_coefficients(self):
+		'''
+		Get Fourier transformed data and modes
+		'''
+
+		'''
+		Inner product for projection - requires loading Qfft blocks
+		'''
+		# # Load modes
+		# n_modes_save = self._n_blocks
+		# if 'n_modes_save' in self._params:
+		# 	n_modes_save = self._params['n_modes_save']
+		# print(n_modes_save)
+		# print(self._n_blocks)
+
+		# For each frequency
+		for iFreq in tqdm(range(0,self._n_freq), desc='computing coeffs'):
+			# load FFT data from previously saved file
+			Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
+			for iBlk in range(0, self._n_modes_save):
+				file = os.path.join(self._save_dir_blocks,'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+				Q_hat_f[:,iBlk] = np.load(file)
+
+			file_psi = os.path.join(self._save_dir_blocks,'modes1to{:04d}_freq{:04d}.npy'.format(self._n_modes_save,iFreq))
+			Psi = np.load(file_psi)
+			Psi = Psi.reshape(-1,self._n_modes_save)
+
+			# compute inner product between Qfft and modes
+			a_k = np.matmul(Psi.T, Q_hat_f * self._weights).T
+			print(a_k.shape)
+
+			# Save these coefficients for posterity
+			file_a_k = os.path.join(self._save_dir_blocks,'coeffs1to{:04d}_freq{:04d}.npy'.format(self._n_modes_save,iFreq))
+			np.save(file_a_k, a_k)
+
+
+
+	def compute_coeffs(self):
+
+		# get data matrix
+		X = self.get_data(t_0=0, t_end=self.nt)
+		X = np.squeeze(X)
+
+		q_hat = self.get_blocks()
+
+		# assemble modes for all frequency
+		# coeffs_sum = np.sum(self.modes, axis=2)
+		# coeffs_sum = np.zeros([self.n_modes_save,self.nt])
+		m = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
+		q = np.empty([self._n_freq, self.nx, self.nv, self._n_modes_save])
+		for iFreq in tqdm(range(0, self._n_freq), desc='getting modes'):
+			m[iFreq,...] = self.get_modes_at_freq(iFreq)
+		m = np.squeeze(m)
+		q_hat = q_hat[...,0:self._n_modes_save]
+		print('self.weights.shape = ', self.weights.shape)
+		print('m.shape = ', m.shape)
+		print('X.shape = ', X.shape)
+		print('q_hat.shape = ', q_hat.shape)
+
+		# calculate period and time vector
+		T = self.nt * self.dt
+		t = np.linspace(0, T, self.nt)
+
+		# pre-compute auxiliary phase vector and shape it accordingly
+		sum_modes = np.zeros([self.nx, self.n_modes_save])
+		sum_modes_phase = np.zeros([self.nx, self.nt, self.n_modes_save])
+		for k in range(self.n_modes):
+			for freq_idx, freq in enumerate(self.freq):
+				period = 1 / self.freq[freq_idx]
+				t_vector = np.linspace(0,2 * np.pi * self.freq[freq_idx], self.nt)
+				phase = np.atleast_2d(np.exp(complex(0,1))) * t_vector
+				mode = np.atleast_2d(m[freq_idx,...,k])
+				mode_phase = np.matmul(mode.T, phase)
+				sum_modes[...,k] += np.squeeze(mode)
+				sum_mode_phase[...,k] += mode_phase
+
+		plt.plot(t, np.real(sum_mode_phase[0,:,0]), label='reconstructed dynamics')
+		plt.plot(t, X[:,0], label='true dynamics')
+		plt.legend()
+		plt.show()
+		sys.exit(2)
+
+
+		phase = np.atleast_2d(np.exp(complex(0,1) * np.linspace(0,2 * np.pi * self.freq[freq_idx], self.nt)))
+		leading_mode = np.atleast_2d(m[freq_idx,...,0])
+		print(leading_mode.shape)
+		print(phase.shape)
+		mode_phase = np.matmul(leading_mode.T, phase)
+		print(mode_phase.shape)
+		print(t.shape)
+		print(mode_phase[0,:].shape)
+		plt.plot(t, np.real(mode_phase[0,:]), label='reconstructed dynamics')
+		plt.plot(t, X[:,410], label='true dynamics')
+		plt.legend()
+		plt.show()
+		sys.exit(2)
+		# phase = np.reshape(phase,(1,phase.shape[0]))
+
+		# plots per fixed x1 vs. t
+		mode_phase_x2 = np.matmul(mode_x1.T, phase)
+
+
+		m_prime = np.empty([m.shape[1], m.shape[0], m.shape[2]])
+		self._coeffs = np.empty([self.n_freq, self.n_freq, self._n_modes_save])
+		# self._dynamics = np.zeros([self.)
+		for k in tqdm(range(self.n_modes), desc='computing coeffs'):
+
+			# equation (2.7), https://arxiv.org/pdf/2012.02902.pdf
+			# S = la.inv((m_prime[...,k] * self.weights) @ m[...,k])
+			print((m[...,k].conj().T * self.weights).T.shape)
+			print(q_hat[...,k].shape)
+			self._coeffs[...,k] = (m[...,k].conj().T * self.weights).T @ (q_hat[...,k].T)
+			# self._coeffs[...,k] = (m[...,k].conj().T * self.weights).T @ (X - self.t_mean).T
+			# self._dynamics += m[...,k].T @ self._coeffs[...,k]
+
+		print(self._coeffs.shape)
+
+		plt.plot(self._coeffs[0,:,0], label='coeffs')
+		plt.plot(self._coeffs[0,:,1], label='coeffs')
+		plt.legend()
+		plt.show()
+
+		# plt.plot(X[-1,:], label='true X')
+		# plt.plot(self._dynamics[:,-1], label='reduced X')
+		# plt.legend()
+		# plt.show()
 
 
 
@@ -691,6 +736,7 @@ class SPOD_base(object):
 		'''
 		See method implementation in the postprocessing module.
 		'''
+		self.get_block_paths()
 		if self._Q_hat_paths is None:
 			raise ValueError('Q_hat_files not found. Consider running fit()')
 		elif isinstance(self._Q_hat_paths, dict):
@@ -737,13 +783,13 @@ class SPOD_base(object):
 			X = self._data[t_0, t_end]
 		return X
 
-	def get_block_paths(self, n_blocks, n_freq, saveDir):
+	def get_block_paths(self):
 		print('Getting block paths ...')
 		self._Q_hat_paths = dict()
-		for iBlk in range(0, n_blocks):
+		for iBlk in range(0, self._n_blocks):
 			self._Q_hat_paths[iBlk] = dict()
-			for iFreq in range(0, n_freq):
-				file = os.path.join(saveDir,
+			for iFreq in range(0, self.n_freq):
+				file = os.path.join(self._save_dir_blocks,
 					'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
 				self._Q_hat_paths[iBlk][iFreq] = file
 	# ---------------------------------------------------------------------------

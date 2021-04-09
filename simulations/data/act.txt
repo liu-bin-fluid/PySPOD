@@ -1,0 +1,28 @@
+#!/bin/bash 
+  
+#PBS -P era5_download_
+#PBS -q openmp
+#PBS -l select=1:ncpus=1:mem=10GB 
+#PBS -j oe 
+#PBS -N era5_download_
+
+cd $PBS_O_WORKDIR;   ## This line is needed, do not modify. 
+
+##--- Put your exec/application commands below ---  
+## If your matlab program is < my_matlab_prog.m >. 
+
+source /etc/profile.d/rec_modules.sh
+
+module load python3.6.4
+export PYTHONPATH=$PYTHONPATH:/home/svu/e0546050/python3.6.4/lib/python3.6/site-packages
+
+
+#python testpython.py
+python summer.py
+
+exit $?
+
+
+
+
+

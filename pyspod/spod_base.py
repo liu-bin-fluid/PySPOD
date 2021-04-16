@@ -11,12 +11,12 @@ import time
 import psutil
 import warnings
 import numpy as np
+from numpy import linalg as la
 import scipy.special as sc
 from scipy.fft import fft
-from numpy import linalg as la
-import pyfftw
-from pyfftw import FFTW
 import multiprocessing
+from pyfftw import FFTW
+import pyfftw
 flags = ['FFTW_MEASURE']
 pyfftw.config.NUM_THREADS = 4
 pyfftw.config.PLANNER_EFFORT = 'FFTW_MEASURE'

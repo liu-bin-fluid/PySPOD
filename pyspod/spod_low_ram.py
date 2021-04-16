@@ -48,7 +48,7 @@ class SPOD_low_ram(SPOD_base):
 		# loop over number of blocks and generate Fourier realizations,
 		# if blocks are not saved in storage
 		if not blocks_present:
-			Q_blk = np.zeros([self._n_DFT,self._nx], dtype='complex_')
+			Q_blk = np.zeros([self._n_DFT, self._nx], dtype='complex_')
 			for iBlk in range(0,self._n_blocks):
 
 				# compute block

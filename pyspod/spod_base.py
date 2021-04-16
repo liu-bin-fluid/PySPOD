@@ -7,12 +7,20 @@ from __future__ import division
 # Import standard Python packages
 import os
 import sys
+import time
 import psutil
 import warnings
 import numpy as np
 import scipy.special as sc
 from scipy.fft import fft
 from numpy import linalg as la
+import pyfftw
+from pyfftw import FFTW
+import multiprocessing
+flags = ['FFTW_MEASURE']
+pyfftw.config.NUM_THREADS = 4
+pyfftw.config.PLANNER_EFFORT = 'FFTW_MEASURE'
+n_threads = multiprocessing.cpu_count();
 
 # hello
 
@@ -49,6 +57,7 @@ class SPOD_base(object):
 		self._reuse_blocks 		= params.get('reuse_blocks', False)      # reuse blocks if present
 		self._savefft           = params.get('savefft', False) 		     # save fft block if required
 		self._save_dir          = params.get('savedir', os.path.join(CWD, 'results')) # where to save data
+		self._fftw              = params.get('fftw', False) 			 # whether to use fftw acceleration
 
 		# type of data management
 		# - data_handler: read type online
@@ -457,7 +466,25 @@ class SPOD_base(object):
 		# window and Fourier transform block
 		self._window = self._window.reshape(self._window.shape[0],1)
 		Q_blk = Q_blk * self._window
-		Q_blk_hat = (self._winWeight / self._n_DFT) * fft(Q_blk, axis=0);
+
+		s = time.time()
+		if self._fftw:
+			print('FFTW acceleration')
+			fftw_output = pyfftw.empty_aligned(Q_blk.shape, dtype='complex128')
+			pyfftw.interfaces.cache.enable()
+			pyfftw.interfaces.cache.set_keepalive_time(30)
+			fftw_obj = pyfftw.FFTW(
+				Q_blk.astype('complex128'),
+				fftw_output,
+				axes=(0,),
+				flags=flags,
+				threads=n_threads
+			)
+			fftw_obj()
+			Q_blk_hat = (self._winWeight / self._n_DFT) * fftw_output
+		else:
+			Q_blk_hat = (self._winWeight / self._n_DFT) * fft(Q_blk, axis=0)
+		print('FFT elapsed time: ', time.time() - s, 'sec')
 		Q_blk_hat = Q_blk_hat[0:self._n_freq,:];
 
 		# correct Fourier coefficients for one-sided spectrum
@@ -762,7 +789,7 @@ class SPOD_base(object):
 								   figsize=(12,8),
 								   equal_axes=False,
 								   filename=None,
-                                   origin=None):
+								   origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''
@@ -814,7 +841,7 @@ class SPOD_base(object):
 										 figsize=(12,8),
 										 equal_axes=False,
 										 filename=None,
-                                         origin=None):
+										 origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''
@@ -854,7 +881,7 @@ class SPOD_base(object):
 					 coastlines='',
 					 figsize=(12,8),
 					 filename=None,
-                     origin=None):
+					 origin=None):
 		'''
 		See method implementation in the postprocessing module.
 		'''

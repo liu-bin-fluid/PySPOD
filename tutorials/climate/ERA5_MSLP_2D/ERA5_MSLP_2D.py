@@ -73,9 +73,10 @@ params['normalize_weights'] = False        	# normalization of weights by data v
 params['normalize_data'   ] = False   		# normalize data by data variance
 params['n_modes_save'     ] = 3      		# modes to be saved
 params['conf_level'       ] = 0.95   		# calculate confidence level
-params['reuse_blocks'     ] = True 		    # whether to reuse blocks if present
+params['reuse_blocks'     ] = True 		# whether to reuse blocks if present
 params['savefft'          ] = True   		# save FFT blocks to reuse them in the future (saves time)
 params['savedir'          ] = os.path.join(CWD, 'results', Path(file).stem) # folder where to save results
+params['fftw'             ] = False # whether to use fftw acceleration
 
 # Set weights
 weights = utils_weights.geo_trapz_2D(

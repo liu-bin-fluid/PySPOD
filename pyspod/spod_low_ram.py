@@ -98,17 +98,18 @@ class SPOD_low_ram(SPOD_base):
 			self._n_modes_save = n_modes_save
 
 		# Check frequency file
-		freq_present = self._are_freq_present(self._n_blocks,self._n_freq,self._save_dir_blocks, self.nMode)
+		freq_present = self._are_freq_present(self._n_blocks,self._n_freq,self._save_dir_blocks, self._n_modes_save)
 
 		# load FFT data from previously saved file
 		Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_')
-		for iBlk in range(0,self._n_blocks):
-			file = os.path.join(self._save_dir_blocks,
-				'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-			Q_hat_f[:,iBlk] = np.load(file)
+		for iFreq in range(0,self._n_freq):
+			for iBlk in range(0,self._n_blocks):
+				file = os.path.join(self._save_dir_blocks,
+					'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+				Q_hat_f[:,iBlk] = np.load(file)
 
-		# compute standard spod
-		self.compute_standard_spod(Q_hat_f, iFreq)
+			# compute standard spod
+			self.compute_standard_spod(Q_hat_f, iFreq)
 
 		# store and save results
 		self.store_and_save()

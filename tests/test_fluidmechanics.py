@@ -27,12 +27,7 @@ sys.path.append(os.path.join(CFD,"../pyspod"))
 from pyspod.spod_low_storage import SPOD_low_storage
 from pyspod.spod_low_ram     import SPOD_low_ram
 from pyspod.spod_streaming   import SPOD_streaming
-import pyspod.weights as weights
-
-# project libraries
-from pyspod.spod_low_ram import SPOD_low_ram
-from pyspod.spod_low_storage import SPOD_low_storage
-from pyspod.spod_streaming import SPOD_streaming
+import pyspod.utils_weights as utils_weights
 
 # data ingestion and configuration
 file = os.path.join(CFD,'data','fluidmechanics_data.mat')
@@ -49,23 +44,25 @@ x1 = data_arrays['r'].T; x1 = x1[:,0]
 x2 = data_arrays['x'].T; x2 = x2[0,:]
 
 # parameters
-overlap_in_percent = 50
-T_approx = 8
 params = dict()
-params['xdim'        ] = 2
-params['nv'          ] = 1
-params['dt'          ] = dt
-params['nt'          ] = t.shape[0]
-params['n_FFT'       ] = np.ceil(block_dimension / dt)
-params['n_freq'      ] = params['n_FFT'] / 2 + 1
-params['n_overlap'   ] = np.ceil(params['n_FFT'] * overlap_in_percent / 100)
-params['savefreqs'   ] = np.arange(0,params['n_freq'])
-params['conf_level'  ] = 0.95
-params['n_vars'      ] = 1
-params['n_modes_save'] = 3
-params['normvar'     ] = False
-params['savedir'     ] = os.path.join(CWD, 'results', Path(file).stem)
-params['weights'     ] = np.ones([len(x1)*len(x2)*params['nv'],1])
+
+# -- required parameters
+params['time_step'   ] = dt 			# data time-sampling
+params['n_snapshots' ] = t.shape[0]		# number of time snapshots (we consider all data)
+params['n_space_dims'] = 2				# number of spatial dimensions (longitude and latitude)
+params['n_variables' ] = 1				# number of variables
+params['n_DFT'       ] = np.ceil(block_dimension / dt) # length of FFT blocks
+
+# -- optional parameters
+params['overlap'          ] = 50			# dimension in percentage (1 to 100) of block overlap
+params['mean_type'        ] = 'blockwise' 	# type of mean to subtract to the data
+params['normalize_weights'] = False	 # normalization of weights by data variance
+params['normalize_data'   ] = False  # normalize data by data variance
+params['n_modes_save'     ] = 3      # modes to be saved
+params['conf_level'       ] = 0.95   # calculate confidence level
+params['reuse_blocks'     ] = True 	 # whether to reuse blocks if present
+params['savefft'          ] = False  # save FFT blocks to reuse them in the future (saves time)
+params['savedir'          ] = os.path.join(CWD, 'results', Path(file).stem)
 
 
 
@@ -74,11 +71,11 @@ def test_spod_low_storage_blockwise_mean():
 	spod tests on jet data for methodologies.
 	'''
 	# set blockwise mean
-	params['mean'] = 'blockwise'
+	params['mean_type'] = 'blockwise'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_storage(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_storage(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results
@@ -88,21 +85,6 @@ def test_spod_low_storage_blockwise_mean():
 	T_approx = 12.5; 	tol = 1e-10
 	freq_found, freq_idx = spod.find_nearest_freq(freq_required=1/T_approx, freq=spod.freq)
 	modes_at_freq = spod.get_modes_at_freq(freq_idx=freq_idx)
-
-	# spod_low_storage.plot_eigs()
-	# spod_low_storage.plot_eigs_vs_frequency()
-	# spod_low_storage.plot_eigs_vs_period()
-	# spod_low_storage.plot_2D_modes_at_frequency(freq_required=freq_low_storage_found,
-	# 											freq=spod_low_storage.freq,
-	# 											x1=x1, x2=x2)
-	# spod_low_storage.plot_2D_mode_slice_vs_time(freq_required=freq_low_storage_found,
-	# 											freq=spod_low_storage.freq)
-	# spod_low_storage.plot_mode_tracers(freq_required=freq_low_storage_found,
-	# 								   freq=spod_low_storage.freq,
-	# 								   coords_list=[(10,10), (14,14), (0,1)])
-	# spod_low_storage.plot_2D_data(time_idx=[0,10,20,30,40,50])
-	# spod_low_storage.plot_data_tracers(coords_list=[(10,10), (14,14), (0,1)])
-	# spod_low_storage.generate_2D_data_video()
 	assert((np.abs(modes_at_freq[0,1,0,0])   < 0.0004634362811441267 +tol) & \
 		   (np.abs(modes_at_freq[0,1,0,0])   > 0.0004634362811441267 -tol))
 	assert((np.abs(modes_at_freq[10,3,0,2])  < 0.00015920889387988687+tol) & \
@@ -122,18 +104,17 @@ def test_spod_low_storage_longtime_mean():
 	'''
 
 	# set blockwise mean
-	params['mean'] = 'longtime'
+	params['mean_type'] = 'longtime'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_storage(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_storage(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results
 	T_approx = 12.5; 	tol = 1e-10
 	freq_found, freq_idx = spod.find_nearest_freq(freq_required=1/T_approx, freq=spod.freq)
 	modes_at_freq = spod.get_modes_at_freq(freq_idx=freq_idx)
-
 	assert((np.abs(modes_at_freq[0,1,0,0])   < 0.00025539730555709317+tol) & \
 		   (np.abs(modes_at_freq[0,1,0,0])   > 0.00025539730555709317-tol))
 	assert((np.abs(modes_at_freq[10,3,0,2])  < 0.00014361778314950604+tol) & \
@@ -153,11 +134,11 @@ def test_spod_low_ram_blockwise_mean():
 	'''
 
 	# set blockwise mean
-	params['mean'] = 'blockwise'
+	params['mean_type'] = 'blockwise'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_ram(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_ram(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results
@@ -183,11 +164,11 @@ def test_spod_low_ram_longtime_mean():
 	'''
 
 	# set longtime mean
-	params['mean'] = 'longtime'
+	params['mean_type'] = 'longtime'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_ram(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_ram(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results
@@ -214,27 +195,32 @@ def test_spod_streaming():
 	'''
 
 	# set longtime mean
-	params['mean'] = 'longtime'
+	params['mean_type'] = 'longtime'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_streaming(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_streaming(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results
 	T_approx = 12.5; 	tol = 1e-10
 	freq_found, freq_idx = spod.find_nearest_freq(freq_required=1/T_approx, freq=spod.freq)
 	modes_at_freq = spod.get_modes_at_freq(freq_idx=freq_idx)
-	assert((np.abs(modes_at_freq[0,1,0,0])   < 0.00041529317940656736+tol) & \
-		   (np.abs(modes_at_freq[0,1,0,0])   > 0.00041529317940656736-tol))
-	assert((np.abs(modes_at_freq[10,3,0,2])  < 0.00015155242729219458+tol) & \
-		   (np.abs(modes_at_freq[10,3,0,2])  > 0.00015155242729219458-tol))
-	assert((np.abs(modes_at_freq[14,15,0,1]) < 0.000169268320618809  +tol) & \
-		   (np.abs(modes_at_freq[14,15,0,1]) > 0.000169268320618809  -tol))
-	assert((np.min(np.abs(modes_at_freq))    < 1.9463085095944233e-06+tol) & \
-		   (np.min(np.abs(modes_at_freq))    > 1.9463085095944233e-06-tol))
-	assert((np.max(np.abs(modes_at_freq))    < 0.10499839099197651   +tol) & \
-		   (np.max(np.abs(modes_at_freq))    > 0.10499839099197651   -tol))
+	print(np.abs(modes_at_freq[0,1,0,0]))
+	print(np.abs(modes_at_freq[10,3,0,2]))
+	print(np.abs(modes_at_freq[14,15,0,1]))
+	print(np.min(np.abs(modes_at_freq)))
+	print(np.max(np.abs(modes_at_freq)))
+	assert((np.abs(modes_at_freq[0,1,0,0])   < 0.0003425227031460181  +tol) & \
+		   (np.abs(modes_at_freq[0,1,0,0])   > 0.0003425227031460181  -tol))
+	assert((np.abs(modes_at_freq[10,3,0,2])  < 0.00017883224454813508 +tol) & \
+		   (np.abs(modes_at_freq[10,3,0,2])  > 0.00017883224454813508 -tol))
+	assert((np.abs(modes_at_freq[14,15,0,1]) < 0.0002080915378306923  +tol) & \
+		   (np.abs(modes_at_freq[14,15,0,1]) > 0.0002080915378306923  -tol))
+	assert((np.min(np.abs(modes_at_freq))    < 4.5039283294598355e-06 +tol) & \
+		   (np.min(np.abs(modes_at_freq))    > 4.5039283294598355e-06 -tol))
+	assert((np.max(np.abs(modes_at_freq))    < 0.11068809881000957    +tol) & \
+		   (np.max(np.abs(modes_at_freq))    > 0.11068809881000957    -tol))
 
 
 
@@ -244,11 +230,11 @@ def test_spod_low_storage_savefft():
 	spod tests on jet data for methodologies.
 	'''
 	# set blockwise mean
-	params['mean'] = 'blockwise'
+	params['mean_type'] = 'blockwise'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_storage(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_storage(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results 1
@@ -268,7 +254,7 @@ def test_spod_low_storage_savefft():
 
 	# SPOD analysis
 	params['savefft'] = True
-	SPOD_analysis = SPOD_low_storage(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_storage(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results 2 (after loading blocks from storage)
@@ -299,11 +285,11 @@ def test_spod_low_ram_savefft():
 	spod tests on jet data for methodologies.
 	'''
 	# set blockwise mean
-	params['mean'] = 'blockwise'
+	params['mean_type'] = 'blockwise'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_ram(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_ram(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results 1
@@ -323,7 +309,7 @@ def test_spod_low_ram_savefft():
 
 	# SPOD analysis
 	params['savefft'] = True
-	SPOD_analysis = SPOD_low_ram(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_ram(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test results 2 (after loading blocks from storage)
@@ -354,11 +340,11 @@ def test_postprocessing():
 	spod tests on jet data for methodologies.
 	'''
 	# set blockwise mean
-	params['mean'] = 'blockwise'
+	params['mean_type'] = 'blockwise'
 	params['savefft'] = False
 
 	# SPOD analysis
-	SPOD_analysis = SPOD_low_storage(X=X, params=params, data_handler=False, variables=variables)
+	SPOD_analysis = SPOD_low_storage(data=X, params=params, data_handler=False, variables=variables)
 	spod = SPOD_analysis.fit()
 
 	# Test postprocessing and results
@@ -371,6 +357,11 @@ def test_postprocessing():
 	spod.plot_2D_modes_at_frequency(freq_required=freq_found,
 									freq=spod.freq,
 									x1=x1, x2=x2,
+									filename='modes.png')
+	spod.plot_2D_modes_at_frequency(freq_required=freq_found,
+									freq=spod.freq,
+									x1=x1, x2=x2,
+									imaginary=True,
 									filename='modes.png')
 	spod.plot_2D_mode_slice_vs_time(freq_required=freq_found,
 									freq=spod.freq,
@@ -399,13 +390,6 @@ def test_postprocessing():
 		shutil.rmtree(os.path.join(CWD,'results'))
 	except OSError as e:
 		print("Error: %s : %s" % (os.path.join(CWD,'results'), e.strerror))
-	try:
-		shutil.rmtree(os.path.join(CFD,'__pycache__'))
-	except OSError as e:
-		print("Error: %s : %s" % (os.path.join(CFD,'__pycache__'), e.strerror))
-
-
-
 
 
 

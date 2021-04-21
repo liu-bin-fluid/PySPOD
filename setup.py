@@ -1,15 +1,16 @@
 import os
 import sys
+import pyspod
 import shutil
 from setuptools import setup
 from setuptools import Command
 
 # GLOBAL VARIABLES
-NAME = "pyspod"
-URL = 'https://github.com/mengaldo/PySPOD'
-AUTHOR = "Gianmarco Mengaldo"
-EMAIL = "gianmarco.mengaldo@gmail.com"
-VERSION = "0.4.3"
+NAME = pyspod.__name__
+URL = pyspod.__url__
+AUTHOR = pyspod.__author__
+EMAIL = pyspod.__email__
+VERSION = pyspod.__version__
 KEYWORDS='spectral-proper-orthogonal-decomposition spod'
 REQUIRED = [
 	"numpy",
@@ -25,7 +26,6 @@ REQUIRED = [
 	"ecmwf_api_client",
 	"cdsapi",
 	"future",
-	"ffmpeg",
 	"pytest",
 ]
 EXTRAS = {
@@ -39,7 +39,7 @@ DESCR = (
 	" (Schmidt et al. 2018), (Schmidt et al. 2019).\n"
 	"\n"
 	"PySPOD comes with a set of tutorials spanning weather and climate, seismic and "
-	" fluidmechanics applicaitons, and it can be used for both canonical problems "
+	" fluid mechanics applications, and it can be used for both canonical problems "
 	" as well as large datasets. \n"
 )
 CWD = os.path.abspath(os.path.dirname(__file__))
@@ -79,8 +79,6 @@ class UploadCommand(Command):
 		os.system('git tag v{0}'.format(VERSION))
 		os.system('git push --tags')
 		sys.exit()
-
-
 
 # SETUP
 setup(

@@ -123,13 +123,12 @@ class SPOD_base(object):
         else:
             self._weights = np.ones(self._xshape+(self._nv,))
             self._weights_name = 'uniform'
-            if rank == 0:
-                warnings.warn(
-                    'Parameter `weights` not equal to an `numpy.ndarray`.'
-                    'Using default uniform weighting')
-            else:
-                None;
-            comm.Barrier();
+            # if rank == 0:
+            #     warnings.warn(
+            #         'Parameter `weights` not equal to an `numpy.ndarray`.'
+            #         'Using default uniform weighting')
+            # else:
+            #     None;
 
         # normalize weigths if required
         if self._normalize_weights:
@@ -598,7 +597,8 @@ class SPOD_base(object):
         #----- parallel eigendecomposition ------
         E = SLEPc.EPS(); E.create(comm=PETSc.COMM_WORLD); E.setOperators(data);
         E.setBalance(1); E.setProblemType(3); 
-        E.setTolerances(tol=1e-9); #E.setTolerances(tol=1e-9,max_it=250); 
+        #E.setTolerances(tol=1e-9); 
+        E.setTolerances(tol=1e-6,max_it=250); 
         E.setType('arnoldi'); E.setDimensions(nev=row); E.setFromOptions(); 
         E.solve(); nconv = E.getConverged(); 
         L,V = [],[];
@@ -778,35 +778,24 @@ class SPOD_base(object):
     def _are_blocks_present(n_blocks, n_freq, saveDir):
         if rank == 0:
             print('Checking if blocks are already present ...',flush=True)
-        else:
-            None;
-        all_blocks_exist = 0
-        for iBlk in range(0,n_blocks):
-            all_freq_exist = 0
-            for iFreq in range(0,n_freq):
-                file = os.path.join(saveDir,
-                    'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-                if os.path.exists(file):
-                    all_freq_exist = all_freq_exist + 1
-            if (all_freq_exist == n_freq):
-                if rank == 0:
+            all_blocks_exist = 0
+            for iBlk in range(0,n_blocks):
+                all_freq_exist = 0
+                for iFreq in range(0,n_freq):
+                    file = os.path.join(saveDir,
+                        'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+                    if os.path.exists(file):
+                        all_freq_exist = all_freq_exist + 1
+                if (all_freq_exist == n_freq):
                     print('block '+str(iBlk+1)+'/'+str(n_blocks)+\
-                        ' is present in: ', saveDir,flush=True)
-                else:
-                    None;
-                all_blocks_exist = all_blocks_exist + 1
-        if all_blocks_exist == n_blocks:
-            if rank == 0:
+                            ' is present in: ', saveDir,flush=True)
+                    all_blocks_exist = all_blocks_exist + 1
+            if all_blocks_exist == n_blocks:
                 print('... all blocks are present - loading from storage.',flush=True)
+                return True
             else:
-                None;
-            return True
-        else:
-            if rank == 0:
                 print('... blocks are not present - proceeding to compute them.\n',flush=True)
-            else:
-                None;
-            return False
+                return False
 
     # @staticmethod
     # def _nextpow2(a):

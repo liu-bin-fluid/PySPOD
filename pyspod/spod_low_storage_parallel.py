@@ -46,16 +46,16 @@ class SPOD_low_storage(SPOD_base):
             print('--------------------------------------',flush=True)
         else:
             None;
-        comm.Barrier();
+        comm.barrier();
         # check RAM requirements
         
         gb_vram_required = self._n_DFT * self._nx * self._nv * sys.getsizeof(complex()) * BYTE_TO_GB
         gb_vram_avail = (psutil.virtual_memory()[1])/size * BYTE_TO_GB
         
         print('On Processor '+str(rank)+'; RAM available = ', gb_vram_avail,flush=True)
-        comm.Barrier();         
+        comm.barrier();         
         print('On Processor '+str(rank)+'; RAM required  = ', gb_vram_required,flush=True)
-        comm.Barrier();       
+        comm.barrier();       
         if gb_vram_required > 1.5 * gb_vram_avail:
             raise ValueError(
                 'On Processor '+str(rank)+'RAM required larger than RAM available... '
@@ -71,6 +71,11 @@ class SPOD_low_storage(SPOD_base):
                 self._n_blocks,self._n_freq,self._save_dir_blocks)
         else:
             None;
+        blocks_present = comm.bcast(blocks_present,root=0);
+
+        #Q_blk = np.empty([self._n_DFT,int(self._nx*self._nv)])
+        Q_hat = np.empty([self._n_freq,self._nx*self.nv,self._n_blocks], dtype='complex_')
+        Q_blk_hat = np.empty([self._n_DFT,int(self._nx*self._nv)], dtype='complex_')
 
         if not blocks_present:
             # loop over number of blocks and generate Fourier realizations
@@ -92,9 +97,10 @@ class SPOD_low_storage(SPOD_base):
                             np.save(file, Q_blk_hat_fi);
                     else:
                         None;
+                    # store FFT blocks in RAM
+                    Q_hat[:,:,iBlk] = Q_blk_hat
                 else:
                     None;
-                comm.Barrier();
             else:    
                 if rank == 0:
                     #print("Split file list ...",flush=True);
@@ -105,7 +111,7 @@ class SPOD_low_storage(SPOD_base):
                 else:
                     chunks = None;        
                 local_n_blocks = comm.scatter(chunks, root=0);
-                comm.Barrier(); # wait for processors to finish
+                comm.barrier(); # wait for processors to finish
                 for iBlk in local_n_blocks:
                     # compute block
                     Q_blk_hat, offset = self.compute_blocks(iBlk)
@@ -120,11 +126,10 @@ class SPOD_low_storage(SPOD_base):
                             Q_blk_hat_fi = Q_blk_hat[iFreq,:]
                             np.save(file, Q_blk_hat_fi);
                     else:
-                        None;   
-                comm.Barrier();
-        else:
-            None;
-            
+                        None; 
+                    # store FFT blocks in RAM
+                    Q_hat[:,:,iBlk] = Q_blk_hat
+        Q_hat=comm.reduce(Q_hat,op=MPI.SUM, root=0);
         if rank == 0:
             print('--------------------------------------',flush=True)
         else:
@@ -143,35 +148,30 @@ class SPOD_low_storage(SPOD_base):
         self._eigs = np.zeros([self._n_freq,self._n_blocks], dtype='complex_')
         self._modes = dict()
 
-
         # load FFT blocks from hard drive and save modes on hard drive (for large data)
         for iFreq in tqdm(range(0,self._n_freq),desc='computing frequencies'):
-            # load FFT data from previously saved file
-            Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_');
-            if rank == 0:
-                for iBlk in range(0,self._n_blocks):
-                    file = os.path.join(self._save_dir_blocks,
-                        'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-                    Q_hat_f[:,iBlk] = np.load(file)
+            
+            if blocks_present:
+                # load FFT data from previously saved file
+                Q_hat_f = np.zeros([self._nx,self._n_blocks], dtype='complex_');
+                if rank == 0:
+                    for iBlk in range(0,self._n_blocks):
+                        file = os.path.join(self._save_dir_blocks,
+                            'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
+                        Q_hat_f[:,iBlk] = np.load(file)
+                else:
+                    None;
             else:
-                None;
-            Q_hat_f = comm.bcast(Q_hat_f,root=0);
-            comm.Barrier();
+                # get FFT block from RAM memory for each given frequency
+                if rank == 0:
+                    Q_hat_f = np.squeeze(Q_hat[iFreq,:,:]).astype('complex_')
+                else:
+                    Q_hat_f = [];
             # compute standard spod
             self.compute_standard_spod(Q_hat_f, iFreq)
             
         # store and save results
         self.store_and_save()
-
-        # delete FFT blocks from memory if saving not required
-        if self._savefft == False and rank== 0:
-            for iBlk in range(0,self._n_blocks):
-                for iFreq in range(0,self._n_freq):
-                    file = os.path.join(self._save_dir_blocks,
-                        'fft_block{:04d}_freq{:04d}.npy'.format(iBlk,iFreq))
-                    os.remove(file)
-        else:
-            None;
                     
         if rank == 0:
             print('------------------------------------',flush=True)

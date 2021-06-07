@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="https://doi.org/10.21105/joss.02862" target="_blank">
-    <img alt="JOSS Paper" src="https://joss.theoj.org/papers/10.21105/joss.02862/status.svg">
-  </a>
+<!--    <a href="https://doi.org/" target="_blank">
+    <img alt="JOSS DOI" src="http://joss.theoj.org/">
+  </a> -->
 
   <a href="https://github.com/mengaldo/PySPOD/LICENSE" target="_blank">
     <img alt="Software License" src="https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square">
@@ -38,6 +38,7 @@
   * [Installation and dependencies](#installation-and-dependencies)
     * [Installing via PIP](#installing-via-pip)
     * [Installing from source](#installing-from-source)
+    * [Installing packages for parallel computing](#installing-parallel)
   * [Documentation](#documentation)
   * [Testing](#testing)
   * [References](#references)
@@ -66,6 +67,8 @@ To see how to use the **PySPOD** package and its user-friendly interface, you ca
 **PySPOD** requires the following Python packages: 
 `numpy`, `scipy`, `matplotlib`, `xarray`, `netcdf4`, `h5py`, `psutil`, `tdqm`, `future`, `ffmpeg`, `sphinx` (for the documentation). 
 Some of the *Climate tutorials*, additionally need `ecmwf_api_client` and `cdsapi`. 
+
+To run **PySPOD** in parallel, besides a working openmpi, the following Python packages are required: `mpi4py`, `petsc`, `petsc4py`, `slepc`, `slepc4py`.
 
 The code is developed and tested for Python 3 only. 
 It can be installed using `pip` or directly from the source code.
@@ -104,6 +107,48 @@ To uninstall the package you have to rerun the installation and record the insta
 > cat installed_files.txt | xargs rm -rf
 ```
 
+### Installing packages for parallel computing (Linux)
+#### Installing openmpi 
+Download openmpi-4.1.0.tar.gz from https://www.open-mpi.org/software/ompi/v4.1/ and move it to root directory (/home/user/)
+```bash
+> tar -xvzf openmpi-4.1.0.tar.gz
+> mkdir /home/user/openmpi
+> cd $HOME/openmpi-4.1.0
+> ./configure --prefix=/home/user/openmpi --enable-shared
+> make all
+> make install
+```
+Add the following lines into .bashrc file and source it.
+```bash
+> export PATH=/home/user/openmpi/bin:$PATH
+> export LD_LIBRARY_PATH=/home/user/openmpi/lib:$LD_LIBRARY_PATH
+```
+
+#### Installing mpi4py, petsc and slepc for python
+Download petsc-3.14.4.tar.gz from https://www.mcs.anl.gov/petsc/download/index.html and move it to root directory (/home/user)
+```bash
+> tar -xvzf petsc-3.14.4.tar.gz
+> mkdir /home/user/petsc
+> cd petsc-3.14.4
+> ./configure --prefix=/home/user/petsc --debugging=0 --enable-shared=1 --with-shared-libraries=1 --with-scalar-type=complex --download-mpi4py --download-petsc4py --with-mpi4py=yes --with-petsc4py=yes --download-slepc --download-slepc-configure-arguments='--download-slepc4py' --with-mpi-dir=/home/user/openmpi --download-fblaslapack --download-fftw --download-hypre
+> make PETSC_DIR=/home/user/petsc-3.14.4 PETSC_ARCH=arch-linux-c-debug all
+> make PETSC_DIR=/home/user/petsc-3.14.4 PETSC_ARCH=arch-linux-c-debug install
+```
+
+Add the following lines into .bashrc and source it.
+```bash
+> export PETSC_DIR=/home/user/petsc-3.14.4
+> export PETSC_ARCH=arch-linux-c-debug
+> export SLEPC_DIR=/home/user/petsc-3.14.4
+> PYTHONPATH=${PYTHONPATH}:/home/user/pestc/lib; export PYTHONPATH
+```
+
+#### Execute program in parallel
+To execute examples in parallel, replace `num_procs` and `example.py` with number of the used processors and the name of python script.
+```bash
+mpirun -np num_procs --oversubscribe python example.py -st_ksp_type gmres -st_pc_type ilu
+```
+
 ## Get started with a simple analysis
 **PySPOD** comes with an extensive suite of [**Tutorials**](tutorials/README.md). 
 You can browse the [**Tutorials**](tutorials/README.md) to explore the capabilities 
@@ -114,31 +159,33 @@ the run command would look like `> python3 your_script.py`).
 
 ```python
 import os
+from mpi4py import MPI
 import xarray as xr
 import numpy  as np
 
 # Import library specific modules
-from pyspod.spod_low_storage import SPOD_low_storage
+from pyspod.spod_low_storage_parallel import SPOD_low_storage
 from pyspod.spod_low_ram     import SPOD_low_ram
 from pyspod.spod_streaming   import SPOD_streaming
 import pyspod.utils_weights as utils_weights
 
+comm = MPI.COMM_WORLD;
+rank = comm.Get_rank();
+size = comm.Get_size();
 
 # Let's create some 2D syntetic data
-
 # -- define spatial and time coordinates
-x1 = np.linspace(0,10,100) 
-x2 = np.linspace(0, 5, 50) 
-xx1, xx2 = np.meshgrid(x1, x2)
-t = np.linspace(0, 200, 1000)
-
+variables = ['p'] # list containing our variable names
+x1 = np.linspace(0,10,100)     # first spatial coordinate
+x2 = np.linspace(0, 5, 50)     # second spatial coordinate
+xx1, xx2 = np.meshgrid(x1, x2) # matrix of coordinates
+t = np.linspace(0, 200, 1000)  # time
 # -- define 2D syntetic data
 s_component = np.sin(xx1 * xx2) + np.cos(xx1)**2 + np.sin(0.1*xx2)
 t_component = np.sin(0.1 * t)**2 + np.cos(t) * np.sin(0.5*t)
 p = np.empty((t_component.shape[0],)+s_component.shape)
 for i, t_c in enumerate(t_component):
     p[i] = s_component * t_c
-
 
 # Let's define the required parameters into a dictionary
 params = dict()
@@ -158,31 +205,37 @@ params['normalize_data'   ] = False       # normalize data by data variance
 params['n_modes_save'     ] = 3           # modes to be saved
 params['conf_level'       ] = 0.95        # calculate confidence level
 params['reuse_blocks'     ] = True        # whether to reuse blocks if present
-params['savefft'          ] = False       # save FFT blocks to reuse them in the future (saves time)
+params['savefft'          ] = True        # save FFT blocks to reuse them in the future (saves time)
 params['savedir'          ] = os.path.join('results', 'simple_test') # folder where to save results
 
 
 # Initialize libraries for the low_storage algorithm
-spod = SPOD_low_storage(p, params=params, data_handler=False, variables=['p'])
-
+spod_ls = SPOD_low_storage(p, params=params, data_handler=False, variables=['p'])
+start_time = MPI.Wtime();
 # and run the analysis
-spod.fit()
-
-
+spod_ls.fit()
+end_time = MPI.Wtime();
+if rank == 0:
+    print('Time taken for fit: '+str(end_time-start_time));
+else:
+    None;
 # Let's plot the data
-spod.plot_2D_data(time_idx=[1,2])
-spod.plot_data_tracers(coords_list=[(5,2.5)], time_limits=[0,t.shape[0]])
-
+spod_ls.plot_2D_data(time_idx=[1,2])
+spod_ls.plot_data_tracers(coords_list=[(5,2.5)], time_limits=[0,t.shape[0]])
 
 # Show results
 T_approx = 10 # approximate period = 10 time units
-freq = spod.freq
-freq_found, freq_idx = spod.find_nearest_freq(freq_required=1/T_approx, freq=freq)
-modes_at_freq = spod.get_modes_at_freq(freq_idx=freq_idx)
-spod.plot_eigs()
-spod.plot_eigs_vs_period(freq=freq, xticks=[1, 7, 30, 365, 1825])
-spod.plot_2D_modes_at_frequency(
+freq = spod_ls.freq
+freq_found, freq_idx = spod_ls.find_nearest_freq(freq_required=1/T_approx, freq=freq)
+modes_at_freq = spod_ls.get_modes_at_freq(freq_idx=freq_idx)
+spod_ls.plot_eigs()
+spod_ls.plot_eigs_vs_frequency(freq=freq)
+spod_ls.plot_eigs_vs_period   (freq=freq, xticks=[1, 7, 30, 365, 1825])
+spod_ls.plot_2D_modes_at_frequency(
 	freq_required=freq_found, freq=freq, x1=x2, x2=x1, modes_idx=[0,1], vars_idx=[0])
+
+
+
 ```
 You can change `SPOD_low_storage` to `SPOD_low_ram` and `SPOD_streaming`, 
 to run the other two SPOD algorithms available.
